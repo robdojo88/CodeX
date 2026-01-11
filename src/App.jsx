@@ -3,40 +3,117 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import CodeChecker from './CodeChecker';
 import { problems } from './problems';
 import { ProgressContext } from './ProgressContext';
+import { supabase } from './supabaseClient';
 import './App.css';
 
 export default function App() {
-    const { progress, totalScore, cheatAttempts, totalCheatAttempts } =
-        useContext(ProgressContext);
-    const [name, setName] = useState('');
-    const [nameSet, setNameSet] = useState(false);
+    const {
+        progress,
+        totalScore,
+        cheatAttempts,
+        totalCheatAttempts,
+        loadStudentData,
+        loading,
+    } = useContext(ProgressContext);
 
-    // 🆕 Timer feature
+    const [user, setUser] = useState(null);
+    const [name, setName] = useState('');
+    const [authLoading, setAuthLoading] = useState(true);
     const [examStartTime, setExamStartTime] = useState(null);
     const [elapsedTime, setElapsedTime] = useState(0);
+    const EXAM_DURATION = 180; // minutes
 
-    // 🆕 Exam duration (in minutes) - set to 0 for no limit
-    const EXAM_DURATION = 180; // 90 minutes exam
-
+    // Check authentication state on mount
     useEffect(() => {
-        const savedName = localStorage.getItem('username');
-        if (savedName) {
-            setName(savedName);
-            setNameSet(true);
+        checkUser();
 
-            // Load or set exam start time
-            const savedStartTime = localStorage.getItem('examStartTime');
-            if (savedStartTime) {
-                setExamStartTime(parseInt(savedStartTime));
-            } else {
-                const startTime = Date.now();
-                localStorage.setItem('examStartTime', startTime.toString());
-                setExamStartTime(startTime);
+        // Listen for auth changes
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+            if (session?.user) {
+                handleAuthenticatedUser(session.user);
             }
-        }
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
-    // 🆕 Timer update
+    const checkUser = async () => {
+        try {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+            setUser(session?.user ?? null);
+
+            if (session?.user) {
+                await handleAuthenticatedUser(session.user);
+            }
+        } catch (error) {
+            console.error('Error checking user:', error);
+        } finally {
+            setAuthLoading(false);
+        }
+    };
+
+    const handleAuthenticatedUser = async (user) => {
+        // Get name from Google account
+        const fullName =
+            user.user_metadata?.full_name || user.email.split('@')[0];
+        setName(fullName);
+
+        // Check if student record exists
+        const { data: existingStudent } = await supabase
+            .from('students')
+            .select('*')
+            .eq('email', user.email)
+            .single();
+
+        if (!existingStudent) {
+            // Create new student record
+            const startTime = Date.now();
+            await supabase.from('students').insert({
+                email: user.email,
+                name: fullName,
+                exam_start_time: startTime,
+            });
+            setExamStartTime(startTime);
+        } else {
+            setExamStartTime(existingStudent.exam_start_time);
+        }
+
+        // Load student data
+        await loadStudentData(user.email);
+    };
+
+    const signInWithGoogle = async () => {
+        try {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: window.location.origin,
+                },
+            });
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error signing in with Google:', error);
+            alert('Failed to sign in with Google. Please try again.');
+        }
+    };
+
+    const signOut = async () => {
+        try {
+            await supabase.auth.signOut();
+            setUser(null);
+            setName('');
+            window.location.reload();
+        } catch (error) {
+            console.error('Error signing out:', error);
+        }
+    };
+
     useEffect(() => {
         if (!examStartTime) return;
 
@@ -48,7 +125,6 @@ export default function App() {
         return () => clearInterval(interval);
     }, [examStartTime]);
 
-    // 🆕 Format time display
     const formatTime = (seconds) => {
         const hrs = Math.floor(seconds / 3600);
         const mins = Math.floor((seconds % 3600) / 60);
@@ -58,33 +134,41 @@ export default function App() {
             .padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // 🆕 Calculate remaining time
     const remainingSeconds =
         EXAM_DURATION > 0 ? EXAM_DURATION * 60 - elapsedTime : null;
     const isTimeUp = remainingSeconds !== null && remainingSeconds <= 0;
 
-    // 🆕 Export results function
-    const exportResults = () => {
+    const exportResults = async () => {
+        const { data: progressData } = await supabase
+            .from('progress')
+            .select('*')
+            .eq('student_email', user.email);
+
         const exportData = {
             studentName: name,
+            studentEmail: user.email,
             examDate: new Date().toISOString(),
             timeSpent: formatTime(elapsedTime),
             totalScore: totalScore,
             maxScore: problems.length,
             cheatAttempts: totalCheatAttempts,
-            problems: problems.map((p) => ({
-                id: p.id,
-                title: p.title,
-                status:
-                    progress[p.id] === 1
-                        ? 'Passed'
-                        : progress[p.id] === -1
-                        ? 'Failed'
-                        : 'Not Attempted',
-                cheats: cheatAttempts[p.id] || 0,
-                code:
-                    localStorage.getItem(`code_${p.id}`) || 'No code submitted',
-            })),
+            problems: problems.map((p) => {
+                const problemData = progressData?.find(
+                    (pd) => pd.problem_id === p.id
+                );
+                return {
+                    id: p.id,
+                    title: p.title,
+                    status:
+                        progress[p.id] === 1
+                            ? 'Passed'
+                            : progress[p.id] === -1
+                            ? 'Failed'
+                            : 'Not Attempted',
+                    cheats: cheatAttempts[p.id] || 0,
+                    code: problemData?.code || 'No code submitted',
+                };
+            }),
         };
 
         const blob = new Blob([JSON.stringify(exportData, null, 2)], {
@@ -98,71 +182,67 @@ export default function App() {
         URL.revokeObjectURL(url);
     };
 
-    // 🆕 Reset all progress
-    const handleResetAll = () => {
-        if (
-            window.confirm(
-                'Are you sure you want to reset ALL progress? This cannot be undone!'
-            )
-        ) {
-            localStorage.clear();
-            window.location.reload();
-        }
-    };
+    // Loading state
+    if (authLoading || (loading && user)) {
+        return (
+            <div className='min-h-screen flex items-center justify-center bg-gray-100'>
+                <div className='text-center'>
+                    <div className='animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4'></div>
+                    <p className='text-gray-600'>Loading...</p>
+                </div>
+            </div>
+        );
+    }
 
-    const handleSetName = () => {
-        if (!name.trim()) return;
-        localStorage.setItem('username', name);
-        setNameSet(true);
-
-        // Set exam start time
-        const startTime = Date.now();
-        localStorage.setItem('examStartTime', startTime.toString());
-        setExamStartTime(startTime);
-    };
-
-    const handleResetName = () => {
-        localStorage.removeItem('username');
-        setName('');
-        setNameSet(false);
-    };
-
-    // 🔹 Name screen unchanged
-    if (!nameSet) {
+    // Not signed in - Show Google login
+    if (!user) {
         return (
             <div className='min-h-screen flex flex-col justify-center items-center bg-gray-100 p-6'>
                 <div className='bg-white shadow-lg rounded-lg p-8 w-full max-w-md text-center'>
                     <h1 className='text-2xl font-bold mb-4 text-gray-800'>
                         Welcome 2553 Students!
                     </h1>
-                    <p className='mb-2 text-gray-600'>
-                        Please enter your name to start:
-                    </p>
-                    <p className='italic mb-4 text-gray-500'>
-                        Make sure this is your real name—it can't be changed.
+                    <p className='mb-4 text-gray-600'>
+                        Sign in with your Google account to start the exam.
                     </p>
                     <p className='mb-6 text-red-500 font-semibold'>
                         Friendly reminder, cheaters go to hell!
                     </p>
-                    <input
-                        type='text'
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className='border border-gray-300 rounded px-4 py-2 w-full mb-4 font-mono'
-                        placeholder='Your name here...'
-                    />
+
                     <button
-                        onClick={handleSetName}
-                        className='bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700'
+                        onClick={signInWithGoogle}
+                        className='bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-3 w-full font-medium shadow-sm'
                     >
-                        Start
+                        <svg className='w-5 h-5' viewBox='0 0 24 24'>
+                            <path
+                                fill='#4285F4'
+                                d='M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z'
+                            />
+                            <path
+                                fill='#34A853'
+                                d='M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z'
+                            />
+                            <path
+                                fill='#FBBC05'
+                                d='M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z'
+                            />
+                            <path
+                                fill='#EA4335'
+                                d='M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z'
+                            />
+                        </svg>
+                        Sign in with Google
                     </button>
+
+                    <p className='mt-4 text-xs text-gray-500'>
+                        Please use your school Google account
+                    </p>
                 </div>
             </div>
         );
     }
 
-    // 🆕 Time's up overlay
+    // Time's up screen
     if (isTimeUp) {
         return (
             <div className='min-h-screen flex flex-col justify-center items-center bg-gray-100 p-6'>
@@ -192,17 +272,17 @@ export default function App() {
                     </button>
                     <br />
                     <button
-                        onClick={handleResetAll}
+                        onClick={signOut}
                         className='text-sm text-blue-600 hover:underline'
                     >
-                        Start New Exam
+                        Sign Out
                     </button>
                 </div>
             </div>
         );
     }
 
-    // 🔹 Main app
+    // Main exam app
     return (
         <Router>
             <div className='h-lvh overflow-hidden'>
@@ -216,7 +296,6 @@ export default function App() {
                             <p className='text-gray-700'>
                                 Hello, <b>{name}</b>!
                             </p>
-                            {/* 🆕 Timer Display */}
                             <div
                                 className={`font-mono font-bold ${
                                     remainingSeconds !== null &&
@@ -243,13 +322,19 @@ export default function App() {
                                     🚨 Cheats: {totalCheatAttempts}
                                 </p>
                             )}
-                            {/* 🆕 Export Button */}
                             <button
                                 onClick={exportResults}
                                 className='bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'
                                 title='Export your results'
                             >
                                 📥 Export
+                            </button>
+                            <button
+                                onClick={signOut}
+                                className='bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+                                title='Sign out'
+                            >
+                                🚪 Sign Out
                             </button>
                         </div>
                     </div>
@@ -275,7 +360,6 @@ export default function App() {
                                         className={`${bgColor} block my-2 text-white px-4 py-1 rounded-lg font-medium transition-colors duration-200 whitespace-nowrap shadow-md hover:shadow-lg relative`}
                                     >
                                         <span>{p.title}</span>
-                                        {/* 🆕 Cheat badge */}
                                         {cheats > 0 && (
                                             <span className='ml-2 bg-red-700 text-white text-xs px-2 py-0.5 rounded-full'>
                                                 🚨 {cheats}
@@ -286,7 +370,6 @@ export default function App() {
                             })}
                         </nav>
 
-                        {/* 🆕 Progress Summary */}
                         <div className='mt-4 px-2'>
                             <div className='bg-white rounded-lg p-3 text-xs'>
                                 <p className='font-bold mb-1'>Progress</p>
