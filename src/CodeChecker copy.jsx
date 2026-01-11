@@ -33,17 +33,12 @@ export default function CodeChecker({
 
     // Load code from Supabase when problem changes
     useEffect(() => {
-        let isMounted = true;
+        // Only run if problem actually changed
+        if (currentProblemId.current === problemId) return;
+
+        currentProblemId.current = problemId;
 
         const loadProblemCode = async () => {
-            // Only load if this is a different problem
-            if (currentProblemId.current === problemId && !loadingCode) {
-                return;
-            }
-
-            currentProblemId.current = problemId;
-
-            if (!isMounted) return;
             setLoadingCode(true);
 
             // Clear outputs only when changing problems
@@ -54,9 +49,6 @@ export default function CodeChecker({
             startProblemTimer(problemId);
 
             const savedCode = await loadCode(problemId);
-
-            if (!isMounted) return;
-
             if (savedCode) {
                 setCode(savedCode);
             } else {
@@ -70,11 +62,7 @@ export default function CodeChecker({
         };
 
         loadProblemCode();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [problemId, funcName]);
+    }, [problemId, funcName, loadCode, startProblemTimer]);
 
     const handlePaste = (e) => {
         const pastedText = e.clipboardData.getData('text');
@@ -333,7 +321,7 @@ export default function CodeChecker({
             <div className='flex items-center justify-center h-96'>
                 <div className='text-center'>
                     <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4'></div>
-                    <p className='text-gray-600'>Amazing Loading ...</p>
+                    <p className='text-gray-600'>Loading problem...</p>
                 </div>
             </div>
         );
@@ -417,13 +405,16 @@ export default function CodeChecker({
                 </div>
                 <div className='w-3/12'>
                     <h3 className='font-semibold mb-1'>Console Output</h3>
-                    <div className='bg-black text-green-400 h-150 rounded overflow-y-scroll p-5'>
+                    <div className='bg-black text-green-400 h-150 rounded overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -scroll-mt-28 p-5 p-5'>
                         {consoleOutput}
                     </div>
                 </div>
                 <div className='w-3/12 h-96'>
                     <h3 className='font-semibold'>Test Results</h3>
-                    <div className='bg-gray-500 text-white h-150 rounded overflow-y-scroll p-5'>
+                    {/* <div className='bg-gray-500 text-white h-150 rounded overflow-y-scroll -scroll-mt-28 p-5'>
+                        {testResults}
+                    </div> */}
+                    <div className='bg-gray-500 text-white h-150 rounded overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -scroll-mt-28 p-5'>
                         {testResults}
                     </div>
                 </div>

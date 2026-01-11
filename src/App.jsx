@@ -62,7 +62,7 @@ export default function App() {
         const fullName =
             user.user_metadata?.full_name || user.email.split('@')[0];
         setName(fullName);
-
+        // console.log(user.user_metadata?.avatar_url);
         // Check if student record exists
         const { data: existingStudent } = await supabase
             .from('students')
@@ -199,6 +199,11 @@ export default function App() {
         return (
             <div className='min-h-screen flex flex-col justify-center items-center bg-gray-100 p-6'>
                 <div className='bg-white shadow-lg rounded-lg p-8 w-full max-w-md text-center'>
+                    <img
+                        className='mx-auto'
+                        src='https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRjuHVzoL7ReFJKDmJDoqDO1wMGGPaEQZGNQ&s'
+                        alt=''
+                    />
                     <h1 className='text-2xl font-bold mb-4 text-gray-800'>
                         Welcome 2553 Students!
                     </h1>
@@ -285,26 +290,30 @@ export default function App() {
     // Main exam app
     return (
         <Router>
-            <div className='h-lvh overflow-hidden'>
-                <header className='mb-6 px-28 pt-5'>
-                    <h1 className='text-3xl font-bold text-gray-800'>
-                        2553 Programming Midterm Practical Exam
-                    </h1>
-
-                    <div className='flex justify-between items-center mt-2'>
+            <div className='h-lvh overflow-y-scroll'>
+                <header className='mb-6 px-28 pt-5 flex justify-between'>
+                    <div className='space-y-3'>
+                        <h1 className='text-3xl font-bold text-gray-800'>
+                            2553 Programming Midterm Practical Exam
+                        </h1>
                         <div className='flex gap-4 items-center'>
-                            <p className='text-gray-700'>
-                                Hello, <b>{name}</b>!
+                            <p className='text-gray-700 flex items-center'>
+                                <img
+                                    className='mr-4 rounded-full h-14'
+                                    src={user.user_metadata?.avatar_url}
+                                    alt='Profile'
+                                />{' '}
+                                Hello, &nbsp; <b> {name}</b>!
                             </p>
                             <div
-                                className={`font-mono font-bold ${
+                                className={`font-mono font-extrabold text-2xl ${
                                     remainingSeconds !== null &&
                                     remainingSeconds < 300
                                         ? 'text-red-600 animate-pulse'
-                                        : 'text-blue-600'
+                                        : 'text-blue-500'
                                 }`}
                             >
-                                ⏱️{' '}
+                                ⌛{' '}
                                 {remainingSeconds !== null
                                     ? `Time Left: ${formatTime(
                                           remainingSeconds
@@ -312,30 +321,71 @@ export default function App() {
                                     : `Time: ${formatTime(elapsedTime)}`}
                             </div>
                         </div>
-
+                    </div>
+                    <div className='flex justify-between items-center mt-2'>
                         <div className='flex gap-4 items-center'>
-                            <p className='text-gray-800 font-bold'>
-                                Score: {totalScore} / {problems.length}
-                            </p>
-                            {totalCheatAttempts > 0 && (
-                                <p className='text-red-600 font-bold'>
-                                    🚨 Cheats: {totalCheatAttempts}
+                            <div className='mt-4 px-2'>
+                                <div className='bg-white rounded-lg p-3 text-[16px] space-x-3 flex '>
+                                    {/* <p className='font-bold mb-1'>Progress</p> */}
+                                    <div className='flex justify-between mb-1'>
+                                        <span className='text-green-600'>
+                                            ✅ Passed:
+                                        </span>
+                                        <span className='font-bold'>
+                                            {
+                                                Object.values(progress).filter(
+                                                    (v) => v === 1
+                                                ).length
+                                            }
+                                        </span>
+                                    </div>
+                                    <div className='flex justify-between mb-1'>
+                                        <span className='text-red-600'>
+                                            ❌ Failed:
+                                        </span>
+                                        <span className='font-bold'>
+                                            {
+                                                Object.values(progress).filter(
+                                                    (v) => v === -1
+                                                ).length
+                                            }
+                                        </span>
+                                    </div>
+                                    <div className='flex justify-between'>
+                                        <span className='text-gray-600'>
+                                            ⏳ Pending:
+                                        </span>
+                                        <span className='font-bold'>
+                                            {problems.length -
+                                                Object.keys(progress).length}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className='space-x-3'>
+                                <p className='text-gray-800 font-bold'>
+                                    Score: {totalScore} / {problems.length}
                                 </p>
-                            )}
-                            <button
-                                onClick={exportResults}
-                                className='bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'
-                                title='Export your results'
-                            >
-                                📥 Export
-                            </button>
-                            <button
-                                onClick={signOut}
-                                className='bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
-                                title='Sign out'
-                            >
-                                🚪 Sign Out
-                            </button>
+                                {totalCheatAttempts > 0 && (
+                                    <p className='text-red-600 font-bold'>
+                                        🚨 Cheats: {totalCheatAttempts}
+                                    </p>
+                                )}
+                                <button
+                                    onClick={exportResults}
+                                    className='bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'
+                                    title='Export your results'
+                                >
+                                    📥 Export
+                                </button>
+                                <button
+                                    onClick={signOut}
+                                    className='bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+                                    title='Sign out'
+                                >
+                                    🚪 Sign Out
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </header>
@@ -369,45 +419,6 @@ export default function App() {
                                 );
                             })}
                         </nav>
-
-                        <div className='mt-4 px-2'>
-                            <div className='bg-white rounded-lg p-3 text-xs'>
-                                <p className='font-bold mb-1'>Progress</p>
-                                <div className='flex justify-between mb-1'>
-                                    <span className='text-green-600'>
-                                        ✅ Passed:
-                                    </span>
-                                    <span className='font-bold'>
-                                        {
-                                            Object.values(progress).filter(
-                                                (v) => v === 1
-                                            ).length
-                                        }
-                                    </span>
-                                </div>
-                                <div className='flex justify-between mb-1'>
-                                    <span className='text-red-600'>
-                                        ❌ Failed:
-                                    </span>
-                                    <span className='font-bold'>
-                                        {
-                                            Object.values(progress).filter(
-                                                (v) => v === -1
-                                            ).length
-                                        }
-                                    </span>
-                                </div>
-                                <div className='flex justify-between'>
-                                    <span className='text-gray-600'>
-                                        ⏳ Pending:
-                                    </span>
-                                    <span className='font-bold'>
-                                        {problems.length -
-                                            Object.keys(progress).length}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     <div className='w-12/12'>
