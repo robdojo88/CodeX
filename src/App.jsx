@@ -294,7 +294,8 @@ export default function App() {
                 <header className='mb-6 px-28 pt-5 flex justify-between'>
                     <div className='space-y-3'>
                         <h1 className='text-3xl font-bold text-gray-800'>
-                            2553 Programming Midterm Practical Exam
+                            {/* 2553 Programming Midterm Practical Exam */}
+                            Task 4B - 2553
                         </h1>
                         <div className='flex gap-4 items-center'>
                             <p className='text-gray-700 flex items-center'>
